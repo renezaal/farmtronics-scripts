@@ -25,87 +25,6 @@ map.sorted = function(keyFunc = null, descending = false)
 	return result
 end function
 
-// A list that keeps itself sorted.
-globals.SortedList = { "list":[] }
-
-// Function used to compare elements in the list.
-// Overwrite when not using numbers.
-SortedList.compareFunction = function(a, b)
-	// Example implementation of a compare function.
-	// This example assumes the values provided are Number types.
-	if a < b then return -1
-	if a == b then return 0
-	return 1
-end function
-
-// Adds a element to the given list using the comparer.
-// Can net some strange results if the target list is not sorted.
-SortedList.addToList = function(element, list)
-	i = 0
-	while i < list.len
-		order = self.compareFunction(element, list[i])
-		if order < 0 then
-			list.insert(i, element)
-			return i
-		end if
-		i = i + 1
-	end while
-
-	list.push(element)
-	return list.len - 1
-end function
-
-// Adds a value to the sorted list.
-// Returns the index of the element in the list.
-SortedList.add = function(value)
-	return self.addToList(value, self.list)
-end function
-
-// Re-sorts the list using the existing comparison function.
-// Uses bog standard insertion sort, so use sparingly.
-// May be upgraded to mergesort in the future.
-// But insertion sort is good enough for small amounts of elements.
-// Does not need to be called when using only SortedList.add for adding and modifying values in the list.
-// Not tested, but should be a stable sort the way I implemented it...
-SortedList.reSort = function()
-	temp = []
-	for element in self.list
-		self.addToList(element, temp)
-	end for
-
-	for i in range(0, self.list.len - 1)
-		self.list[i] = temp[i]
-	end for
-end function
-
-// Makes the list into a sorted list.
-// Use list.pushSorted when adding values to keep list in sorted order.
-// Use list.reSortSorted when any values have been modified directly.
-// The optional compare function should have a signature like function(A, B).
-// Accepted parameters should be values in this list.
-// The compare function should return:
-//		-1 if A precedes B
-//		0 if A and B have the same order
-//		1 if A succeeds B
-// The default comparer simply does an inequality comparison (A < B).
-// While those are the preferred return values from a readability standpoint,
-// this function reads any number < 0 as -1 and any number > 0 as 1.
-// Returns the new SortedList.
-SortedList.createNewFrom = function(list, compareFunction = null)
-	sortedList = new SortedList
-	if @compareFunction != null then sortedList.compareFunction = @compareFunction
-	sortedList.reSort
-	return sortedList
-end function
-
-SortedList.pull = function
-	return self.list.pull
-end function
-
-SortedList.pop = function
-	return self.list.pop
-end function
-
 TimeSlicer = { "sliceStartTime":1, "sliceSize":0.1, "slicePart":0.01, "currentSlicePartEnd":1 }
 TimeSlicer.start = function()
 	self.sliceStartTime = time
@@ -150,21 +69,11 @@ end function
 // Assumes the cost of travelling from A to B is purely determined by a cost in B.
 // So no edges with weights here.
 globals.pathfinding = {}
-pathfinding.Cell = {}
-pathfinding.Cell.getKey = function()
-	return null // Return the unique key for this cell.
-end function
-pathfinding.Cell.getCost = function()
-	return null // Return null for inaccessible cells, otherwise return a strictly positive number.
-end function
-pathfinding.Cell.getNeighbours = function()
-	return [] // Return all neighbours in the form of Cell instances.
-end function
 
-logPathfindingVariables = function(knownCells, startCell, targetCell, result = [])
+logPathfindingVariables = function(knownCells, startCell, targetCell, targetCellId, result = [])
 	lines = []
 	for element in knownCells.values
-		lines.push("id:" + element.id + ", previous:" + element.previous + ", pathCost:" + element.pathCost + ", cost:" + element.cell.getCost)
+		lines.push("id:" + element.id + ", previous:" + element.previous + ", pathCost:" + element.pathCost + ", cost:" + element.cost)
 	end for
 
 	// Log to a file.
@@ -205,7 +114,7 @@ logPathfindingVariables = function(knownCells, startCell, targetCell, result = [
 				previousY = previousKeySplit[1].val
 				
 				arrows = "←→↑↓"
-				if xyInfo.info == targetCell.getKey then arrows = "<>Δ∇"
+				if xyInfo.info == targetCellId then arrows = "<>Δ∇"
 				if previousX == xyInfo.x - 1 and previousY == xyInfo.y then symbol = arrows[0] // Left
 				if previousX == xyInfo.x + 1 and previousY == xyInfo.y then symbol = arrows[1] // Right
 				if previousY == xyInfo.y + 1 and previousX == xyInfo.x then symbol = arrows[3] // Down
@@ -222,8 +131,8 @@ end function
 // Generates a path from the starting cell to the target cell.
 // Returns a list of all cell ids in the order of the path.
 // Returns null if no path could be found.
-globals.pathfinding.generatePath = function(startCell, targetCell)
-	targetCellId = targetCell.getKey
+globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, getCostFunc, getNeighboursFunc)
+	targetCellId = getIdFunc(targetCell)
 	sortedList = new SortedList
 	sortedList.compareFunction = function(a, b)
 		if a.id == targetCellId then return -1
@@ -232,13 +141,14 @@ globals.pathfinding.generatePath = function(startCell, targetCell)
 	end function
 
 	knownCells = {}
-	cellInfo = { "cost":0.01, "pathCost":0.01, "id":startCell.getKey, "previous":null, "cell":startCell }
+	cellInfo = { "cost":0.01, "pathCost":0.01, "id":getIdFunc(startCell), "previous":null, "cell":startCell }
 	knownCells[cellInfo.id] = cellInfo
 	print "From: " + cellInfo.id + ", to: " + targetCellId
 
 	// Keep track of time for abort if needed.
 	startTime = time
 	maxComputeTime = 30
+
 	// And work in small batches as to not lag the player.
 	timeSlicer = new TimeSlicer
 	timeSlicer.slicePart = 0.9
@@ -246,14 +156,15 @@ globals.pathfinding.generatePath = function(startCell, targetCell)
 
 	// Main pathfinding loop.
 	while cellInfo != null and cellInfo.id != targetCellId
-		for neighbour in cellInfo.cell.getNeighbours
+		neighbours = getNeighboursFunc(cellInfo.cell)
+		for neighbour in neighbours
 			// Get the identifier for this neighbour.
-			neighbourId = neighbour.getKey
+			neighbourId = getIdFunc(neighbour)
 
 			// Create a new cellInfo if it does not exist.
 			if not knownCells.hasIndex(neighbourId) then
 				// Get the cost for moving to this neighbour.
-				neighbourCost = neighbour.getCost
+				neighbourCost = getCostFunc(neighbour)
 
 				// A cost of null is deemed inaccessible.
 				// Inaccessible cells are skipped when pathfinding.
@@ -261,13 +172,13 @@ globals.pathfinding.generatePath = function(startCell, targetCell)
 
 				// A non-positive cost is considered erroneous.
 				if not neighbourCost > 0 then
-					print "Cost cannot be 0 or lower, cost: " + neighbourCost
+					print "A cost of 0 or lower is not allowed, cost: " + neighbourCost
 					continue
 				end if
 
 				// Initialized with a slightly higher path cost to trigger scheduling for evaluation.
 				// Store in the known cells map.
-				knownCells[neighbourId] = { "cost":neighbourCost, "pathCost":cellInfo.pathCost + neighbourCost + 1, "id":neighbourId, "previous":cellInfo.id, "cell":neighbour }
+				knownCells[neighbourId] = { "cost":neighbourCost, "pathCost":cellInfo.pathCost + neighbourCost + 1, "id":neighbourId, "previous":null, "cell":neighbour }
 			end if
 
 			neighbourInfo = knownCells[neighbourId]
@@ -285,7 +196,7 @@ globals.pathfinding.generatePath = function(startCell, targetCell)
 
 		if time - startTime > maxComputeTime / timeSlicer.slicePart then
 			print "Maximum pathfinding time ("+ maxTime +"s) reached."
-			logPathfindingVariables(knownCells, startCell, targetCell)
+			logPathfindingVariables(knownCells, startCell, targetCell, targetCellId)
 			exit
 		end if
 
@@ -305,7 +216,7 @@ globals.pathfinding.generatePath = function(startCell, targetCell)
 	temp = cellInfo
 
 	result = []
-	startId = startCell.getKey
+	startId = getIdFunc(startCell)
 
 	// Follow the found path from end to start while saving the results in reverse order.
 	while cellInfo.id != startId
@@ -316,7 +227,7 @@ globals.pathfinding.generatePath = function(startCell, targetCell)
 		// Just detecting and logging circular references.
 		if cellInfo.hasIndex("processed") then
 			print "Circular reference detected in the result path."
-			logPathfindingVariables(knownCells, startCell, targetCell, result)
+			logPathfindingVariables(knownCells, startCell, targetCell, targetCellId, result)
 			exit
 		end if
 	end while

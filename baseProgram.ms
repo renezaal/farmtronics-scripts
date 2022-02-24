@@ -1,4 +1,4 @@
-imports = ["qa", "listUtil", "linqLike", "positioningUtils", "tileUtils"]
+imports = ["qa", "listUtil", "linqLike", "sortedList", "positioningUtils", "tileUtils"]
 for name in imports
 	import name
 	globals[name] = locals[name]
@@ -190,5 +190,3 @@ routingInfo.isInaccessible = function(x, y)
 	return self.inaccessibleTiles[y].indexOf(x) != null
 end function
 routingInfo.loadInaccessibleTiles
-pprint routingInfo.inaccessibleTiles
-wait

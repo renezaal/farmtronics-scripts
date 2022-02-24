@@ -59,43 +59,44 @@ end function
 
 // Pathing for the bot.
 bot.findPathTo = function(x, y)
-	CustomCell = new pathfinding.Cell
-	CustomCell.tile = new Tile
-	CustomCell.requestingBotName = self.name
-	CustomCell.getKey = function()
-		return self.tile.getLocationKey
+	CustomCell = { "tile":null, "requestingBotName":self.name }
+
+	getIdFunc = function(cell)
+		return cell.tile.getLocationKey
 	end function
-	CustomCell.getCost = function()
+
+	getCostFunc = function(cell)
 		// This assumes baseProgram has been loaded.
-		if routingInfo.isInaccessible(self.tile.x, self.tile.y) then return null
-		name = self.tile.getName
+		if routingInfo.isInaccessible(cell.tile.x, cell.tile.y) then return null
+		name = cell.tile.getName
 		if routingInfo.costOf.hasIndex(name) then return routingInfo.costOf[name]
-		if name == self.requestingBotName then return 0.01
+		if name == cell.requestingBotName then return 0.01
 		// Since the bot should be able to walk where a character is walking,
 		// just assume the most expensive walkable tile.
-		if self.tile.getType == "Character" then  return routingInfo.costOf["HoeDirt"]
-		// print "Cost restriced by: " + name + "@" + self.getKey
+		if cell.tile.getType == "Character" then  return routingInfo.costOf["HoeDirt"]
+		// print "Cost restriced by: " + name + "@" + cell.getKey
 		return null
 	end function
-	CustomCell.getNeighbours = function()
+
+	getNeighboursFunc = function(cell)
 		result = [];
-		for element in self.tile.getAdjacent
-			cell = new CustomCell
-			cell.tile = element
-			result.push(cell)
+		for element in cell.tile.getAdjacent
+			newCell = new CustomCell
+			newCell.tile = element
+			result.push(newCell)
 		end for
 		return result
 	end function
 
-	fromTile = new Tile
-	fromTile.initialize(self.position.x, self.position.y, self.position.area)
 	fromCell = new CustomCell
-	fromCell.tile = fromTile
-	toTile = new Tile
-	toTile.initialize(x, y, self.position.area)
+	fromCell.tile = new Tile
+	fromCell.tile.initialize(self.position.x, self.position.y, self.position.area)
+
 	toCell = new CustomCell
-	toCell.tile = toTile
-	return pathfinding.generatePath(fromCell, toCell)
+	toCell.tile = new Tile
+	toCell.tile.initialize(x, y, self.position.area)
+	
+	return pathfinding.generatePath(fromCell, toCell, @getIdFunc, @getCostFunc, @getNeighboursFunc)
 end function
 
 bot.followPath = function(path)
@@ -103,7 +104,7 @@ bot.followPath = function(path)
 		tile = step.tile
 		direction = positioningUtils.getFacing(self.position.x, self.position.y, tile.x, tile.y)
 
-		print "Step: " + step.getKey + " Direction: " + direction
+		print "Step: " + tile.getLocationKey + " Direction: " + direction
 		if direction == null then
 			print "invalid offset, movement aborted"
 			return false
