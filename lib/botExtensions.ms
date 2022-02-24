@@ -13,6 +13,7 @@ bot.setFacing = function(facing)
 	end while
 end function
 
+MoveResult = { "success":1, "blockedByObject":2, "inaccessible":3 }
 // Move in the desired direction (same values as facing).
 // Clears the target tile if the tile name is in the clearNames list.
 // If the bot moved succesfully in the desired direction true is returned, otherwise false.
@@ -21,6 +22,9 @@ bot.doMove = function(direction, clearNames = null)
 	self.setFacing(direction)
 	tileAhead = self.ahead
 
+	targetCoordinates = positioningUtils.getFacedCoordinates(self.position.x, self.position.y, self.facing)
+	if routingInfo.isInaccessible(targetCoordinates.x, targetCoordinates.y) then return MoveResult.inaccessible
+
 	// Wait for the player to step aside.
 	// Doubles as an easy way to get a bot to stop moving.
 	while tileAhead != null and tileAhead.type == "Character"
@@ -28,26 +32,33 @@ bot.doMove = function(direction, clearNames = null)
 		tileAhead = self.ahead
 	end while
 
-	// pprint tileAhead
-	// print clearNames
 	if tileAhead != null and clearNames.indexOf(tileAhead.name) != null then
 		self.clearAhead
 	end if
 
-	// According to my tests, moving forward consistently takes a bit longer than 1 second.
-	// If the way is blocked by the player, it takes as long as needed, but still completes the move.
-	// If the way is blocked by a non-moving obstacle, the move is aborted within 0.000035 seconds.
-	// So testing for a move time above 0.1 seconds should be very reliable.
-	// If it turns out to not be reliable, I'll just have to switch to checking if the bot position has changed.
-	startTime = time
-	self.forward
-	deltaTime = time - startTime
-	if deltaTime < 0.1 then print "Movement restricted @" + self.position.x + ";" + bot.position.y + " by: " + tileAhead
-	return deltaTime > 0.1
+	moved = false
+	tries = 0
+	while not moved and tries < 3
+		oldSpot = {"x":self.position.x, "y":self.position.y}
+		self.forward
+		moved = oldSpot.x != self.position.x or oldSpot.y != self.position.y
+		tries = tries + 1
+	end while
+
+	if not moved then
+		print "Movement restricted @" + self.position.x + ";" + bot.position.y + " by: " + self.ahead
+		if self.ahead == null then
+			routingInfo.registerInaccessibleTile(targetCoordinates.x, targetCoordinates.y)
+			return MoveResult.inaccessible
+		end if
+		return MoveResult.blockedByObject
+	end if
+
+	return MoveResult.success
 end function
 
 // Pathing for the bot.
-bot.goToCoordinate = function(x,y)
+bot.findPathTo = function(x, y)
 	CustomCell = new pathfinding.Cell
 	CustomCell.tile = new Tile
 	CustomCell.requestingBotName = self.name
@@ -55,13 +66,14 @@ bot.goToCoordinate = function(x,y)
 		return self.tile.getLocationKey
 	end function
 	CustomCell.getCost = function()
-		name = self.tile.getName
 		// This assumes baseProgram has been loaded.
+		if routingInfo.isInaccessible(self.tile.x, self.tile.y) then return null
+		name = self.tile.getName
 		if routingInfo.costOf.hasIndex(name) then return routingInfo.costOf[name]
-		if name == self.requestingBotName then return 0
+		if name == self.requestingBotName then return 0.01
 		// Since the bot should be able to walk where a character is walking,
-		// just assume the empty tile.
-		if self.tile.getType == "Character" then  return routingInfo.costOf[null]
+		// just assume the most expensive walkable tile.
+		if self.tile.getType == "Character" then  return routingInfo.costOf["HoeDirt"]
 		// print "Cost restriced by: " + name + "@" + self.getKey
 		return null
 	end function
@@ -83,42 +95,47 @@ bot.goToCoordinate = function(x,y)
 	toTile.initialize(x, y, self.position.area)
 	toCell = new CustomCell
 	toCell.tile = toTile
-	path = pathfinding.generatePath(fromCell, toCell)
-	// pprint path
-	
+	return pathfinding.generatePath(fromCell, toCell)
+end function
+
+bot.followPath = function(path)
 	for step in path
-		tile = Tile.GetTileByLocationKey(step, self.position.area)
-		xOffset = self.position.x - tile.x
-		yOffset = self.position.y - tile.y
-		if xOffset == 0 and yOffset == 0 then continue
+		tile = step.tile
+		direction = positioningUtils.getFacing(self.position.x, self.position.y, tile.x, tile.y)
 
-		direction = -1
-		if      yOffset ==  1 then
-			direction = 0
-		else if xOffset == -1 then
-			direction = 1
-		else if yOffset == -1 then
-			direction = 2
-		else if xOffset ==  1 then
-			direction = 3
-		end if
-
-		print "Step: " + step + ", offset: " + xOffset + ";" + yOffset + " Direction: " + direction
-		if direction == -1 then
+		print "Step: " + step.getKey + " Direction: " + direction
+		if direction == null then
 			print "invalid offset, movement aborted"
 			return false
 		end if
 
-		if self.doMove(direction) == false then return false
+		moveResult = self.doMove(direction)
+		if moveResult != MoveResult.success then return moveResult
 	end for
+	return MoveResult.success
+end function
 
-	return true
+bot.goToCoordinate = function(x, y)
+	moveResult = MoveResult.inaccessible
+	triesWithoutMoving = 0
+	oldSpot = {"x":self.position.x, "y":self.position.y}
+	while moveResult == MoveResult.inaccessible and triesWithoutMoving < 4
+		path = self.findPathTo(x, y)
+		moveResult = self.followPath(path)
+
+		triesWithoutMoving = triesWithoutMoving + 1
+		moved = oldSpot.x != self.position.x or oldSpot.y != self.position.y
+		oldSpot = {"x":self.position.x, "y":self.position.y}
+		if moved then triesWithoutMoving = 0
+	end while
+	routingInfo.saveInaccessibleTiles
+	return moveResult
 end function
 
 // Makes the bot move to the given position.
 bot.goToPosition = function(position)
 	if not position isa Position then return
-	if not self.goToCoordinate(position.x, position.y) then return false
+	if self.goToCoordinate(position.x, position.y) != MoveResult.success then return false
 	self.setFacing(position.facing)
 	return true
 end function
@@ -138,16 +155,16 @@ bot.getClosestPositionFacingTile = function(tile)
 	yOffset = 0;
 	if self.position.y < tile.y then
 		yOffset = -1
-		position.facing = 2
+		position.facing = Facing.south
 	else if self.position.y > tile.y then
 		yOffset = 1
-		position.facing = 0
+		position.facing = Facing.north
 	else if self.position.x > tile.x then
 		xOffset = 1
-		position.facing = 3
+		position.facing = Facing.west
 	else
 		xOffset = -1
-		position.facing = 1
+		position.facing = Facing.east
 	end if
 
 	position.x = tile.x + xOffset

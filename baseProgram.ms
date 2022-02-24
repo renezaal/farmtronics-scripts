@@ -78,26 +78,117 @@ routingInfo.fieldToAttend.y = 25
 // Everything not in this map is simply off-limits.
 // That goes especially for the type "Crafting"!
 routingInfo.costOf = {}
-routingInfo.costOf["Flooring"] = 1
-routingInfo.costOf["HoeDirt"] = 100
-routingInfo.costOf[null] = 10
+routingInfo.costOf["Flooring"]      = 1
+routingInfo.costOf["HoeDirt"]       = 100
+routingInfo.costOf[null]            = 10
 routingInfo.costOf["Artifact Spot"] = 10
-routingInfo.costOf["Grass"] = 10
-routingInfo.costOf["Basic"] = 1000
-routingInfo.costOf["Stone"] = 1000
-routingInfo.costOf["Twig"] = 1000
-routingInfo.costOf["Weeds"] = 1000
-// Only go through trees if you really need to.
-routingInfo.costOf["Tree"] = 100000
+routingInfo.costOf["Grass"]         = 10
+routingInfo.costOf["Basic"]         = 1000
+routingInfo.costOf["Stone"]         = 1000
+routingInfo.costOf["Twig"]          = 1000
+routingInfo.costOf["Weeds"]         = 1000
+routingInfo.costOf["Tree"]          = 100000
 
 routingInfo.energyCostOf = {}
-routingInfo.energyCostOf["Flooring"] = 0
-routingInfo.energyCostOf["HoeDirt"] = 0
-routingInfo.energyCostOf[null] = 0
+routingInfo.energyCostOf["Flooring"]      = 0
+routingInfo.energyCostOf["HoeDirt"]       = 0
+routingInfo.energyCostOf[null]            = 0
 routingInfo.energyCostOf["Artifact Spot"] = 0
-routingInfo.energyCostOf["Grass"] = 0
-routingInfo.energyCostOf["Basic"] = 2
-routingInfo.energyCostOf["Stone"] = 2
-routingInfo.energyCostOf["Twig"] = 2
-routingInfo.energyCostOf["Weeds"] = 2
-routingInfo.energyCostOf["Tree"] = 30
+routingInfo.energyCostOf["Grass"]         = 0
+routingInfo.energyCostOf["Basic"]         = 2
+routingInfo.energyCostOf["Stone"]         = 2
+routingInfo.energyCostOf["Twig"]          = 2
+routingInfo.energyCostOf["Weeds"]         = 2
+routingInfo.energyCostOf["Tree"]          = 30
+
+routingInfo.mapSymbol = {}
+routingInfo.mapSymbol["Flooring"]      = "⬜"
+routingInfo.mapSymbol["HoeDirt"]       = "🌱"
+routingInfo.mapSymbol[null]            = "🟨"
+routingInfo.mapSymbol["Artifact Spot"] = "✨"
+routingInfo.mapSymbol["Grass"]         = "🟩"
+routingInfo.mapSymbol["Stone"]         = "🪨"
+routingInfo.mapSymbol["Boulder"]       = "🪨"
+routingInfo.mapSymbol["Twig"]          = "🪵"
+routingInfo.mapSymbol["Stump"]         = "🪵"
+routingInfo.mapSymbol["Hollow Log"]    = "🪵"
+routingInfo.mapSymbol["Weeds"]         = "❎"
+routingInfo.mapSymbol["Tree"]          = "🌳"
+routingInfo.mapSymbol["Water"]         = "🟦"
+routingInfo.mapSymbol["Clump"]         = "🟤" // Type includes names "Stump", "Hollow Log" and "Boulder".
+routingInfo.mapSymbol["Bot"]           = "🤖"
+routingInfo.mapSymbol["Chest"]         = "📦"
+
+routingInfo.generateFarmMap = function()
+	lines = []
+	for y in range(1,farm.height-2)
+		line = ""
+		for x in range(1,farm.width-2)
+			tile = new Tile
+			tile.initialize(x,y,farm)
+			name = tile.getName
+			type = tile.getType
+			symbol = "❌"
+			if routingInfo.isInaccessible(x, y) then
+				symbol = "🚫"
+			else if routingInfo.mapSymbol.hasIndex(name) then
+				symbol = routingInfo.mapSymbol[name]
+			else if routingInfo.mapSymbol.hasIndex(type) then
+				symbol = routingInfo.mapSymbol[type]
+			else if type == "Crafting" then
+				if name[:3] == "Bot" then
+					symbol = routingInfo.mapSymbol["Bot"]
+				end if
+			end if
+			line = line + symbol
+		end for
+		lines.push(line)
+	end for
+
+	return lines
+end function
+
+routingInfo.saveFarmMap = function(lines)
+	file.writeLines("/usr/resources/map.txt", lines)
+end function
+
+routingInfo.readFarmMap = function()
+	return file.readLines("/usr/resources/map.txt")
+end function
+
+// Inaccessible tiles are tiles that can not be detected by Location.tile but are not walkable.
+routingInfo.inaccessibleTiles = {}
+routingInfo.hasUnsavedInaccessibleTiles = false
+routingInfo.registerInaccessibleTile = function(x, y)
+	if not self.inaccessibleTiles.hasIndex(y) then self.inaccessibleTiles[y] = []
+	self.inaccessibleTiles[y].push(x)
+	self.hasUnsavedInaccessibleTiles = true
+end function
+routingInfo.saveInaccessibleTiles = function()
+	if not self.hasUnsavedInaccessibleTiles then return
+	f = file.open("/usr/resources/inaccessibleTiles.txt", "w")
+	for row in self.inaccessibleTiles
+		y = row.key
+		for x in row.value
+			f.writeLine(x+";"+y)
+		end for
+	end for
+	f.close
+end function
+routingInfo.loadInaccessibleTiles = function()
+	lines = file.readLines("/usr/resources/inaccessibleTiles.txt")
+	for line in lines
+		split = line.split(";")
+		if split.len == 2 then
+			routingInfo.registerInaccessibleTile(split[0].val, split[1].val)
+		end if
+	end for
+	self.hasUnsavedInaccessibleTiles = false
+end function
+routingInfo.isInaccessible = function(x, y)
+	if not self.inaccessibleTiles.hasIndex(y) then return false
+	return self.inaccessibleTiles[y].indexOf(x) != null
+end function
+routingInfo.loadInaccessibleTiles
+pprint routingInfo.inaccessibleTiles
+wait
