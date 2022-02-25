@@ -1,5 +1,7 @@
 // A list that keeps itself sorted.
-globals.SortedList = { "list":[] }
+// Initialize the list variable when creating an instance.
+// Maybe I should switch to using factory methods.
+globals.SortedList = { "list":null }
 
 // Function used to compare elements in the list.
 // Overwrite when not using numbers.

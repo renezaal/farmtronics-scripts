@@ -70,80 +70,25 @@ end function
 // So no edges with weights here.
 globals.pathfinding = {}
 
-logPathfindingVariables = function(knownCells, startCell, targetCell, targetCellId, result = [])
-	lines = []
-	for element in knownCells.values
-		lines.push("id:" + element.id + ", previous:" + element.previous + ", pathCost:" + element.pathCost + ", cost:" + element.cost)
-	end for
-
-	// Log to a file.
-	file.makedir("logs")
-	logFile = file.open("logs/pathing.log","a")
-	logFile.writeLine(startCell)
-	logFile.writeLine(targetCell)
-
-	for line in result
-		logFile.writeLine(line)
-	end for
-	for line in lines
-		logFile.writeLine(line)
-	end for
-
-	// Now for a direction map.
-	xys = []
-	minX = 999999
-	for element in knownCells.values
-		// Yes, this is knowledge about the key that this code should not have.
-		coordinate = element.id.split(";")
-		x = coordinate[0].val;
-		xys.push({"x":x,"y":coordinate[1].val,"info":element.id,"previous":element.previous})
-		if x < minX then minX = x
-	end for
-	
-	rows = getOrganizedRows(xys)
-	
-	for row in rows
-		line = " " * (row[0].x - minX)
-		for xyInfo in row
-			symbol = "O"
-			previousX = xyInfo.x
-			previousY = xyInfo.y
-			if xyInfo.previous != null then
-				previousKeySplit = xyInfo.previous.split(";")
-				previousX = previousKeySplit[0].val
-				previousY = previousKeySplit[1].val
-				
-				arrows = "←→↑↓"
-				if xyInfo.info == targetCellId then arrows = "<>Δ∇"
-				if previousX == xyInfo.x - 1 and previousY == xyInfo.y then symbol = arrows[0] // Left
-				if previousX == xyInfo.x + 1 and previousY == xyInfo.y then symbol = arrows[1] // Right
-				if previousY == xyInfo.y + 1 and previousX == xyInfo.x then symbol = arrows[3] // Down
-				if previousY == xyInfo.y - 1 and previousX == xyInfo.x then symbol = arrows[2] // Up
-			end if
-			line = line + symbol
-		end for
-		logFile.writeLine(line)
-	end for
-
-	logFile.close
-end function
-
 // Generates a path from the starting cell to the target cell.
 // Returns a list of all cell ids in the order of the path.
 // Returns null if no path could be found.
 globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, getCostFunc, getNeighboursFunc)
 	targetCellId = getIdFunc(targetCell)
 	sortedList = new SortedList
+	sortedList.list = []
 	sortedList.compareFunction = function(a, b)
 		if a.id == targetCellId then return -1
 		if a.pathCost < b.pathCost then return -1
+		if a.pathCost > b.pathCost then return 1
 		return 0
 	end function
 
 	knownCells = {}
 	cellInfo = { "cost":0.01, "pathCost":0.01, "id":getIdFunc(startCell), "previous":null, "cell":startCell }
+	startCellId = cellInfo.id
 	knownCells[cellInfo.id] = cellInfo
-	print "From: " + cellInfo.id + ", to: " + targetCellId
+	print "From: " + startCellId + ", to: " + targetCellId
 
 	// Keep track of time for abort if needed.
 	startTime = time
@@ -151,7 +96,7 @@ globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, ge
 
 	// And work in small batches as to not lag the player.
 	timeSlicer = new TimeSlicer
-	timeSlicer.slicePart = 0.9
+	timeSlicer.slicePart = 0.01
 	timeSlicer.start
 
 	// Main pathfinding loop.
@@ -187,7 +132,6 @@ globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, ge
 			// If this is the shortest path to this (neighbour) cell found so far.
 			// Then remember this path. And schedule the neighbour for re-evaluation.
 			if predictedNeighbourPathCost < neighbourInfo.pathCost then
-				neighbourInfo = knownCells[neighbourId]
 				neighbourInfo.pathCost = predictedNeighbourPathCost
 				neighbourInfo.previous = cellInfo.id
 				sortedList.add(neighbourInfo)
@@ -196,8 +140,7 @@ globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, ge
 
 		if time - startTime > maxComputeTime / timeSlicer.slicePart then
 			print "Maximum pathfinding time ("+ maxTime +"s) reached."
-			logPathfindingVariables(knownCells, startCell, targetCell, targetCellId)
-			exit
+			return null
 		end if
 
 		timeSlicer.waitIfNeeded
@@ -205,7 +148,7 @@ globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, ge
 		cellInfo = sortedList.pull
 	end while
 
-	print "Pathfinding took " + (time - startTime) + "s"
+	print "Pathfinding took " + (time - startTime) + "s with " + timeSlicer.slicePart + "th part activity"
 
 	if cellInfo == null then
 		print "No route found"
@@ -213,23 +156,13 @@ globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, ge
 	end if
 
 	// At this point, cellInfo.cell == targetCell.
-	temp = cellInfo
-
 	result = []
 	startId = getIdFunc(startCell)
 
 	// Follow the found path from end to start while saving the results in reverse order.
 	while cellInfo.id != startId
-		cellInfo.processed = true
 		result.insert(0, cellInfo.cell)
 		cellInfo = knownCells[cellInfo.previous]
-
-		// Just detecting and logging circular references.
-		if cellInfo.hasIndex("processed") then
-			print "Circular reference detected in the result path."
-			logPathfindingVariables(knownCells, startCell, targetCell, targetCellId, result)
-			exit
-		end if
 	end while
 	return result
 

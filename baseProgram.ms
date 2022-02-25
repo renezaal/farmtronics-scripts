@@ -53,10 +53,13 @@ end function
 //       Current implementation is a bit too performance hungry for my tastes.
 //       If that does not help, I will probably give IDA* a try.
 
-// TODO: Fix pathfinding loop bug.
+// DONE: Fix pathfinding loop bug.
 //       Encountered a bug where the pathfinding produced a loop.
 //       I am currently still in the process of diagnosing it.
 
+// TODO: Add a check to the inaccessible tile registration decision to see if bot is out of energy.
+//       If the bot is out of energy, it may not move into an empty tile.
+//       This should not erroneously mark the tile as inaccessible.
 
 // Here is the configuration.
 program.commandMode = false
