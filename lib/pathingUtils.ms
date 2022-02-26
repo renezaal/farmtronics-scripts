@@ -75,14 +75,14 @@ globals.pathfinding = {}
 // Returns null if no path could be found.
 globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, getCostFunc, getNeighboursFunc)
 	targetCellId = getIdFunc(targetCell)
-	sortedList = new SortedList
-	sortedList.list = []
-	sortedList.compareFunction = function(a, b)
+	
+	compareFunction = function(a, b)
 		if a.id == targetCellId then return -1
 		if a.pathCost < b.pathCost then return -1
 		if a.pathCost > b.pathCost then return 1
 		return 0
 	end function
+	sortedList = SortedListFactory.create(@compareFunction)
 
 	knownCells = {}
 	cellInfo = { "cost":0.01, "pathCost":0.01, "id":getIdFunc(startCell), "previous":null, "cell":startCell }

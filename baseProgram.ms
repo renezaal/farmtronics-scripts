@@ -82,10 +82,10 @@ routingInfo.fieldToAttend.y = 25
 // That goes especially for the type "Crafting"!
 routingInfo.costOf = {}
 routingInfo.costOf["Flooring"]      = 1
-routingInfo.costOf["HoeDirt"]       = 100
+routingInfo.costOf["HoeDirt"]       = 20
 routingInfo.costOf[null]            = 10
 routingInfo.costOf["Artifact Spot"] = 10
-routingInfo.costOf["Grass"]         = 10
+routingInfo.costOf["Grass"]         = 15
 routingInfo.costOf["Basic"]         = 1000
 routingInfo.costOf["Stone"]         = 1000
 routingInfo.costOf["Twig"]          = 1000
@@ -121,14 +121,15 @@ routingInfo.mapSymbol["Water"]         = "🟦"
 routingInfo.mapSymbol["Clump"]         = "🟤" // Type includes names "Stump", "Hollow Log" and "Boulder".
 routingInfo.mapSymbol["Bot"]           = "🤖"
 routingInfo.mapSymbol["Chest"]         = "📦"
+routingInfo.mapSymbol["Building"]      = "🏠"
+routingInfo.mapSymbol["Bush"]          = "🌿"
 
 routingInfo.generateFarmMap = function()
 	lines = []
-	for y in range(1,farm.height-2)
+	for y in range(1,farm.height-1)
 		line = ""
-		for x in range(1,farm.width-2)
-			tile = new Tile
-			tile.initialize(x,y,farm)
+		for x in range(1,farm.width-1)
+			tile = TileFactory.create(x,y,farm)
 			name = tile.getName
 			type = tile.getType
 			symbol = "❌"

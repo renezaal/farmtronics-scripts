@@ -38,28 +38,19 @@ import "botExtensions"
 //   end for
 // end function
 
-// Determine a crop field from a single tile in that field.
-// Tiles are considered part of the same field when they are 8-connected tilled earth tiles.
-// So basically a floodfill for tilled earth tiles from the given position.
-// Returns a map with all connected tilled earth tiles.
-getField = function(position)
-	if not position isa Position then return null
-	test = function(tile)
-		return tile.getType == "HoeDirt"
-	end function
-
-	tile = new Tile
-	tile.fromPosition(position, farm)
-	return tile.doFloodFillFromHere(@test)
-end function
-
 // -------------------------------
 // Main program.
 // -------------------------------
 
 // Make the bot get water for the watering tool.
 bot.goGetWater = function()
-	self.goToPosition(routingInfo.waterFillPoint)
+	if self.goToPosition(routingInfo.waterFillPoint) != botExtensions.MoveResult.success then
+		print "Could not move to water fill point: "
+		print routingInfo.waterFillPoint
+		print "Aborting all tasks"
+		exit
+	end if
+
 	self.select tools.watering.toolName
 	self.useTool
 end function
@@ -70,14 +61,32 @@ bot.getWateringToolWaterLevel = function()
 	return self.inventory[self.currentToolIndex].waterLeft
 end function
 
-attendField = function()
-	// Get the (tiles of the) field to attend to.
-	field = getField(routingInfo.fieldToAttend)
-	print "Gathered field information, " + field.len + " tile(s)"
+loadFields = function()
+	lines = file.readLines("/usr/resources/fields.txt")
+	fields = []
+	field = []
+	for line in lines
+		if line.len > 0 then
+			if line[0] == "F" then
+				if field.len > 0 then
+					fields.push(field)
+					field = []
+				end if
+			else
+				tile = TileFactory.createFromLocationKey(line, farm)
+				field.push(tile)
+			end if
+		end if
+	end for
 
-	// Organize them in rows.
+	if field.len > 0 then fields.push(field)
+	return fields
+end function
+
+attendField = function(field)
+	// Organize the tiles in rows.
 	rows = {}
-	for tile in field.values
+	for tile in field
 		if not rows.hasIndex(tile.y) then rows[tile.y] = { "y":tile.y }
 		rows[tile.y][tile.x] = tile
 	end for
@@ -94,31 +103,32 @@ attendField = function()
 		if even then tiles.reverse
 		even = not even
 
-		// Manage the watering tool.
-		// Obviously, this fails for rows with more tiles than the maximum water level of the tool.
-		// But I don't like this to be checked for every tile.
-		// So future versions might have changes to support larger row sizes.
-		if bot.getWateringToolWaterLevel < tiles.len then
-			bot.goGetWater
-		end if
-
 		for tile in tiles
 			// One of the values is a y-coordinate.
 			// And we only care about the dry tiles.
 			if not tile isa Tile then continue
 			if not tile.getIsDry then continue
+			
+			// Manage the watering tool.
+			if bot.getWateringToolWaterLevel < 4 then
+				bot.goGetWater
+			end if
 
 			// Face the tile.
-			targetPosition = bot.getClosestPositionFacingTile(tile)
-			if bot.goToPosition(targetPosition) == false then
+			if bot.goFaceCoordinate(tile.x, tile.y) != botExtensions.MoveResult.success then
 				print "Could not move to target position: "
 				print targetPosition
 				print "Aborting task"
 				return
 			end if
 
-			bot.select tools.watering.toolName
-			bot.useTool
+			botTile = TileFactory.create(bot.position.x, bot.position.y, bot.position.area)
+			for adjacentTile in botTile.get4Connected
+				if not adjacentTile.getIsDry then continue
+				bot.setFacing(positioningUtils.getFacing(bot.position.x, bot.position.y, adjacentTile.x, adjacentTile.y))
+				bot.select tools.watering.toolName
+				bot.useTool
+			end for
 		end for
 	end for
 
@@ -126,18 +136,25 @@ attendField = function()
 	bot.goGetWater
 end function
 
+attendFields = function
+	fields = loadFields
+	for field in fields
+		attendField(field)
+	end for
+end function
+
 program.run = function()
 	if program.commandMode then
 		while true
 			print ""
 			print "I can do the following:"
-			print "- Attend field"
+			print "- Attend fields"
 			print "- Quit"
 			print "Please command me. "
 			command = input("Command: ")
 
-			if command == "Attend field" then
-				attendField
+			if command == "Attend fields" then
+				attendFields
 			else if command == "Quit" then
 				break
 			else
@@ -147,6 +164,6 @@ program.run = function()
 
 		print "Goodbye"
 	else
-		attendField
+		attendFields
 	end if
 end function

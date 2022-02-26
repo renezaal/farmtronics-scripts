@@ -13,7 +13,7 @@ bot.setFacing = function(facing)
 	end while
 end function
 
-MoveResult = { "success":1, "blockedByObject":2, "inaccessible":3 }
+MoveResult = { "success":1, "blockedByObject":2, "inaccessible":3, "noPathAvailable":4 }
 // Move in the desired direction (same values as facing).
 // Clears the target tile if the tile name is in the clearNames list.
 // If the bot moved succesfully in the desired direction true is returned, otherwise false.
@@ -57,6 +57,17 @@ bot.doMove = function(direction, clearNames = null)
 	return MoveResult.success
 end function
 
+getTileEntryCost = function(tile)
+	// This assumes baseProgram has been loaded.
+	if routingInfo.isInaccessible(tile.x, tile.y) then return null
+	name = tile.getName
+	if routingInfo.costOf.hasIndex(name) then return routingInfo.costOf[name]
+	// Since the bot should be able to walk where a character is walking,
+	// just assume the most expensive walkable tile.
+	if tile.getType == "Character" then return routingInfo.costOf["HoeDirt"]
+	return null
+end function
+
 // Pathing for the bot.
 bot.findPathTo = function(x, y)
 	CustomCell = { "tile":null, "requestingBotName":self.name }
@@ -73,14 +84,14 @@ bot.findPathTo = function(x, y)
 		if name == cell.requestingBotName then return 0.01
 		// Since the bot should be able to walk where a character is walking,
 		// just assume the most expensive walkable tile.
-		if cell.tile.getType == "Character" then  return routingInfo.costOf["HoeDirt"]
+		if cell.tile.getType == "Character" then return routingInfo.costOf["HoeDirt"]
 		// print "Cost restriced by: " + name + "@" + cell.getKey
 		return null
 	end function
 
 	getNeighboursFunc = function(cell)
 		result = [];
-		for element in cell.tile.getAdjacent
+		for element in cell.tile.get4Connected
 			newCell = new CustomCell
 			newCell.tile = element
 			result.push(newCell)
@@ -89,12 +100,10 @@ bot.findPathTo = function(x, y)
 	end function
 
 	fromCell = new CustomCell
-	fromCell.tile = new Tile
-	fromCell.tile.initialize(self.position.x, self.position.y, self.position.area)
+	fromCell.tile = TileFactory.create(self.position.x, self.position.y, self.position.area)
 
 	toCell = new CustomCell
-	toCell.tile = new Tile
-	toCell.tile.initialize(x, y, self.position.area)
+	toCell.tile = TileFactory.create(x, y, self.position.area)
 	
 	return pathfinding.generatePath(fromCell, toCell, @getIdFunc, @getCostFunc, @getNeighboursFunc)
 end function
@@ -114,6 +123,50 @@ bot.followPath = function(path)
 		if moveResult != MoveResult.success then return moveResult
 	end for
 	return MoveResult.success
+end function
+
+bot.goFaceCoordinate = function(x, y)
+	moveResult = MoveResult.inaccessible
+	triesWithoutMoving = 0
+	oldSpot = {"x":self.position.x, "y":self.position.y}
+	while moveResult == MoveResult.inaccessible and triesWithoutMoving < 4
+		path = self.findPathTo(x, y)
+		if path == null then
+			// No valid path found.
+			moveResult = MoveResult.noPathAvailable
+		else if path.len == 0 then
+			// Bot is on the tile it should face.
+			bestDirection = -1
+			bestDirectionCost = 999999
+			for direction in range(0, 3)
+				facingCoordinates = positioningUtils.getFacedCoordinates(self.position.x, self.position.y, direction)
+				tile = TileFactory.create(facingCoordinates.x, facingCoordinates.y, self.position.area)
+				tileEntryCost = getTileEntryCost(tile)
+				if tileEntryCost < bestDirectionCost then
+					bestDirection = direction
+					bestDirectionCost = tileEntryCost
+				end if
+			end for
+
+			if bestDirection != -1 then
+				moveResult = self.doMove(bestDirection)
+			else
+				moveResult = MoveResult.noPathAvailable
+			end if
+		else
+			// Follow the path until we face the last step.
+			moveResult = self.followPath(path[:-1])
+		end if 
+
+		triesWithoutMoving = triesWithoutMoving + 1
+		moved = oldSpot.x != self.position.x or oldSpot.y != self.position.y
+		oldSpot = {"x":self.position.x, "y":self.position.y}
+		if moved then triesWithoutMoving = 0
+	end while
+
+	self.setFacing(positioningUtils.getFacing(self.position.x, self.position.y, x, y))
+	routingInfo.saveInaccessibleTiles
+	return moveResult
 end function
 
 bot.goToCoordinate = function(x, y)
