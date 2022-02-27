@@ -117,7 +117,7 @@ attendField = function(field)
 			// Face the tile.
 			if bot.goFaceCoordinate(tile.x, tile.y) != botExtensions.MoveResult.success then
 				print "Could not move to target position: "
-				print targetPosition
+				print tile
 				print "Aborting task"
 				return
 			end if

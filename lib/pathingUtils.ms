@@ -73,19 +73,20 @@ globals.pathfinding = {}
 // Generates a path from the starting cell to the target cell.
 // Returns a list of all cell ids in the order of the path.
 // Returns null if no path could be found.
-globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, getCostFunc, getNeighboursFunc)
+globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, getCostFunc, getNeighboursFunc, getEstimatedRemainingPathCostFunc)
 	targetCellId = getIdFunc(targetCell)
 	
 	compareFunction = function(a, b)
 		if a.id == targetCellId then return -1
-		if a.pathCost < b.pathCost then return -1
-		if a.pathCost > b.pathCost then return 1
+		if a.pathCost + a.estimatedRemainingPathCost < b.pathCost + b.estimatedRemainingPathCost then return -1
+		if a.pathCost + a.estimatedRemainingPathCost > b.pathCost + b.estimatedRemainingPathCost then return 1
 		return 0
 	end function
 	sortedList = SortedListFactory.create(@compareFunction)
 
 	knownCells = {}
 	cellInfo = { "cost":0.01, "pathCost":0.01, "id":getIdFunc(startCell), "previous":null, "cell":startCell }
+	cellInfo.estimatedRemainingPathCost = getEstimatedRemainingPathCostFunc(startCell, targetCell)
 	startCellId = cellInfo.id
 	knownCells[cellInfo.id] = cellInfo
 	print "From: " + startCellId + ", to: " + targetCellId
@@ -96,7 +97,7 @@ globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, ge
 
 	// And work in small batches as to not lag the player.
 	timeSlicer = new TimeSlicer
-	timeSlicer.slicePart = 0.01
+	timeSlicer.slicePart = 0.02
 	timeSlicer.start
 
 	// Main pathfinding loop.
@@ -123,7 +124,10 @@ globals.pathfinding.generatePath = function(startCell, targetCell, getIdFunc, ge
 
 				// Initialized with a slightly higher path cost to trigger scheduling for evaluation.
 				// Store in the known cells map.
-				knownCells[neighbourId] = { "cost":neighbourCost, "pathCost":cellInfo.pathCost + neighbourCost + 1, "id":neighbourId, "previous":null, "cell":neighbour }
+				neighbourCellInfo = { "cost":neighbourCost, "pathCost":cellInfo.pathCost + neighbourCost + 1, "id":neighbourId, "previous":null, "cell":neighbour }
+				neighbourCellInfo.estimatedRemainingPathCost = getEstimatedRemainingPathCostFunc(neighbour, targetCell)
+				knownCells[neighbourId] = neighbourCellInfo
+
 			end if
 
 			neighbourInfo = knownCells[neighbourId]

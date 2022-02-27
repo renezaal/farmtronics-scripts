@@ -99,13 +99,18 @@ bot.findPathTo = function(x, y)
 		return result
 	end function
 
+	getEstimatedRemainingPathCostFunc = function(cell, target)
+		// Get the Manhattan distance multiplied by the lowest tile entry cost.
+		return (abs(cell.tile.x - target.tile.x) + abs(cell.tile.y - target.tile.y)) * routingInfo.costOf["Flooring"]
+	end function
+
 	fromCell = new CustomCell
 	fromCell.tile = TileFactory.create(self.position.x, self.position.y, self.position.area)
 
 	toCell = new CustomCell
 	toCell.tile = TileFactory.create(x, y, self.position.area)
 	
-	return pathfinding.generatePath(fromCell, toCell, @getIdFunc, @getCostFunc, @getNeighboursFunc)
+	return pathfinding.generatePath(fromCell, toCell, @getIdFunc, @getCostFunc, @getNeighboursFunc, @getEstimatedRemainingPathCostFunc)
 end function
 
 bot.followPath = function(path)
